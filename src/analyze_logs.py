@@ -29,16 +29,57 @@ def detect_failed_login_bursts(events, threshold=5, window_minutes=5):
     return alerts
 
 
+def detect_after_hours_logins(events, start_hour=8, end_hour=18):
+    """Identify successful logins outside normal business hours."""
+    alerts = []
+
+    for event in events:
+        if event['status'].lower() != 'success':
+            continue
+
+        moment = datetime.fromisoformat(event['timestamp'])
+
+        if moment.hour < start_hour or moment.hour >= end_hour:
+            alerts.append({
+                'source_ip': event['source_ip'],
+                'timestamp': event['timestamp'],
+                'alert_type': 'After-hours login'
+            })
+
+    return alerts
+
+
+
 def main():
     if not INPUT.exists():
-        print('No sample logs found. Run: python src/generate_sample_logs.py')
+        print('No sample logs found. Run: python3 src/generate_sample_logs.py')
         return
+
     with INPUT.open(newline='', encoding='utf-8') as file:
         events = list(csv.DictReader(file))
-    alerts = detect_failed_login_bursts(events)
-    print(f'Analyzed {len(events)} events. Found {len(alerts)} alert(s).')
-    for alert in alerts:
-        print(f"ALERT: {alert['source_ip']} had {alert['failed_attempts']} failed logins within 5 minutes at {alert['timestamp']}")
+
+    # Detection Rule 1: Repeated failed logins
+    brute_force_alerts = detect_failed_login_bursts(events)
+
+    # Detection Rule 2: Successful logins after hours
+    after_hours_alerts = detect_after_hours_logins(events)
+
+    total_alerts = len(brute_force_alerts) + len(after_hours_alerts)
+
+    print(f'Analyzed {len(events)} events.')
+    print(f'Found {total_alerts} security alert(s).')
+
+    for alert in brute_force_alerts:
+        print(
+            f"BRUTE FORCE ALERT: {alert['source_ip']} had "
+            f"{alert['failed_attempts']} failed logins within 5 minutes."
+        )
+
+    for alert in after_hours_alerts:
+        print(
+            f"AFTER-HOURS ALERT: Successful login from "
+            f"{alert['source_ip']} at {alert['timestamp']}"
+        )
 
 
 if __name__ == '__main__':
